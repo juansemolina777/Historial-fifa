@@ -1,0 +1,75 @@
+// Prisma schema para Historial FIFA
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?  @unique
+  passwordHash String?
+  bio       String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+
+  matchesA Match[] @relation("PlayerA")
+  matchesB Match[] @relation("PlayerB")
+
+  tournamentParticipants TournamentParticipant[]
+}
+
+model Tournament {
+  id        String   @id @default(cuid())
+  name      String
+  year      Int
+  createdAt DateTime @default(now())
+
+  matches      Match[]
+  participants TournamentParticipant[]
+}
+
+enum MatchType {
+  TORNEO
+  AMISTOSO
+}
+
+model Match {
+  id   String    @id @default(cuid())
+  type MatchType
+
+  tournamentId String?
+  tournament   Tournament? @relation(fields: [tournamentId], references: [id])
+
+  playerAId String
+  playerA   User   @relation("PlayerA", fields: [playerAId], references: [id])
+
+  playerBId String
+  playerB   User   @relation("PlayerB", fields: [playerBId], references: [id])
+
+  scoreA    Int
+  scoreB    Int
+  playedAt  DateTime
+  createdAt DateTime @default(now())
+
+  @@index([type, playedAt])
+  @@index([tournamentId])
+  @@index([playerAId, playerBId])
+}
+
+model TournamentParticipant {
+  id           String   @id @default(cuid())
+  tournamentId String
+  userId       String
+  createdAt    DateTime @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, userId])
+}

@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: fifa_db
+    restart: always
+    environment:
+      POSTGRES_USER: fifa
+      POSTGRES_PASSWORD: fifa123
+      POSTGRES_DB: fifa_historial
+    ports:
+      - "5432:5432"
+    volumes:
+      - fifa_data:/var/lib/postgresql/data
+
+volumes:
+  fifa_data:

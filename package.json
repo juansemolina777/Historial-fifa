@@ -1,0 +1,24 @@
+{
+  "name": "historial-fifa-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:open": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\" \"npm run open:wait\"",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "db:create": "npm run db:create --prefix server",
+    "db:start": "npm run db:start --prefix server",
+    "db:stop": "npm run db:stop --prefix server",
+    "db:status": "npm run db:status --prefix server",
+    "open": "node scripts/open-url.cjs http://localhost:5173",
+    "open:wait": "node scripts/open-url.cjs http://localhost:5173 --wait",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "prisma:dev": "npm run prisma:dev --prefix server",
+    "prisma:deploy": "npm run prisma:deploy --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
