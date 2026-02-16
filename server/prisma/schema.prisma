@@ -10,18 +10,20 @@ generator client {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String?  @unique
+  id           String   @id @default(cuid())
+  name         String
+  email        String?  @unique
   passwordHash String?
-  bio       String?
-  avatarUrl String?
-  createdAt DateTime @default(now())
+  bio          String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
 
   matchesA Match[] @relation("PlayerA")
   matchesB Match[] @relation("PlayerB")
 
   tournamentParticipants TournamentParticipant[]
+  friendshipsAsUser1     Friendship[] @relation("FriendshipUser1")
+  friendshipsAsUser2     Friendship[] @relation("FriendshipUser2")
 }
 
 model Tournament {
@@ -72,4 +74,18 @@ model TournamentParticipant {
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([tournamentId, userId])
+}
+
+model Friendship {
+  id        String   @id @default(cuid())
+  user1Id   String
+  user2Id   String
+  createdAt DateTime @default(now())
+
+  user1 User @relation("FriendshipUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2 User @relation("FriendshipUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
 }

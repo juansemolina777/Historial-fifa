@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: historial-fifa-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci
+    preDeployCommand: npx prisma migrate deploy
+    startCommand: npm run start
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES
+        value: 7d

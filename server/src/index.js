@@ -25,6 +25,11 @@ const publicUserSelect = {
   createdAt: true,
 };
 
+const friendUserSelect = {
+  ...publicUserSelect,
+  email: true,
+};
+
 const authUserSelect = {
   id: true,
   name: true,
@@ -74,6 +79,27 @@ function extractBearerToken(req) {
 
 function signAuthToken(userId) {
   return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+}
+
+function buildFriendPair(userIdA, userIdB) {
+  return [userIdA, userIdB].sort((left, right) => left.localeCompare(right));
+}
+
+async function listFriendsByUserId(userId) {
+  const friendships = await prisma.friendship.findMany({
+    where: {
+      OR: [{ user1Id: userId }, { user2Id: userId }],
+    },
+    include: {
+      user1: { select: friendUserSelect },
+      user2: { select: friendUserSelect },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return friendships.map((friendship) =>
+    friendship.user1Id === userId ? friendship.user2 : friendship.user1
+  );
 }
 
 function toStandingsRow(user) {
@@ -517,6 +543,124 @@ app.post(
       }
       throw error;
     }
+  })
+);
+
+app.get(
+  "/friends",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const friends = await listFriendsByUserId(req.authUser.id);
+    res.json(friends);
+  })
+);
+
+app.post(
+  "/friends",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: "Email invalido" });
+    }
+
+    const friend = await prisma.user.findUnique({
+      where: { email },
+      select: friendUserSelect,
+    });
+
+    if (!friend) {
+      return res.status(404).json({ error: "No existe un usuario con ese email" });
+    }
+
+    if (friend.id === req.authUser.id) {
+      return res.status(400).json({ error: "No puedes agregarte como amigo" });
+    }
+
+    const [user1Id, user2Id] = buildFriendPair(req.authUser.id, friend.id);
+
+    try {
+      await prisma.friendship.create({
+        data: { user1Id, user2Id },
+      });
+      return res.status(201).json({ friend });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        return res.status(409).json({ error: "Ese usuario ya esta en tu lista de amigos" });
+      }
+      throw error;
+    }
+  })
+);
+
+app.delete(
+  "/friends/:friendId",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const friendId = String(req.params.friendId || "");
+
+    if (!friendId) {
+      return res.status(400).json({ error: "Falta friendId" });
+    }
+
+    const [user1Id, user2Id] = buildFriendPair(req.authUser.id, friendId);
+    const result = await prisma.friendship.deleteMany({
+      where: { user1Id, user2Id },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({ error: "Ese usuario no esta en tu lista de amigos" });
+    }
+
+    res.json({ ok: true });
+  })
+);
+
+app.get(
+  "/friends/matches",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const limitRaw = Number(req.query.limit || 100);
+    const limit = Number.isInteger(limitRaw)
+      ? Math.min(Math.max(limitRaw, 1), 200)
+      : 100;
+
+    const friendIdFilter = String(req.query.friendId || "").trim();
+    const friends = await listFriendsByUserId(req.authUser.id);
+    const friendIds = friends.map((friend) => friend.id);
+
+    if (friendIds.length === 0) {
+      return res.json([]);
+    }
+
+    if (friendIdFilter && !friendIds.includes(friendIdFilter)) {
+      return res.status(404).json({ error: "Ese usuario no esta en tu lista de amigos" });
+    }
+
+    const where = friendIdFilter
+      ? {
+          OR: [{ playerAId: friendIdFilter }, { playerBId: friendIdFilter }],
+        }
+      : {
+          OR: [{ playerAId: { in: friendIds } }, { playerBId: { in: friendIds } }],
+        };
+
+    const matches = await prisma.match.findMany({
+      where,
+      take: limit,
+      include: {
+        tournament: { select: { id: true, name: true, year: true } },
+        playerA: { select: { id: true, name: true } },
+        playerB: { select: { id: true, name: true } },
+      },
+      orderBy: [{ playedAt: "desc" }, { createdAt: "desc" }],
+    });
+
+    res.json(matches);
   })
 );
 

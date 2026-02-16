@@ -193,8 +193,13 @@ export default function App() {
   const [users, setUsers] = useState([]);
   const [tournaments, setTournaments] = useState([]);
   const [friendlies, setFriendlies] = useState([]);
+  const [friends, setFriends] = useState([]);
+  const [friendMatches, setFriendMatches] = useState([]);
+  const [friendMatchFilter, setFriendMatchFilter] = useState("ALL");
   const [overview, setOverview] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [friendForm, setFriendForm] = useState({ email: "" });
+  const [friendBusy, setFriendBusy] = useState(false);
 
   const [matchBusy, setMatchBusy] = useState(false);
   const [matchType, setMatchType] = useState("AMISTOSO");
@@ -247,6 +252,10 @@ export default function App() {
     localStorage.removeItem(TOKEN_KEY);
     setToken("");
     setUser(null);
+    setFriends([]);
+    setFriendMatches([]);
+    setFriendMatchFilter("ALL");
+    setFriendForm({ email: "" });
     setTab("DASHBOARD");
   }, []);
 
@@ -260,18 +269,22 @@ export default function App() {
   }, [clearSession, notify]);
 
   const loadCore = useCallback(async (authToken = token) => {
-    const [u, t, f, o, l] = await Promise.all([
+    const [u, t, f, o, l, fr, fm] = await Promise.all([
       api("/users", { token: authToken }),
       api("/tournaments", { token: authToken }),
       api("/friendlies", { token: authToken }),
       api("/stats/overview", { token: authToken }),
       api("/stats/leaderboard?limit=12", { token: authToken }),
+      api("/friends", { token: authToken }),
+      api("/friends/matches?limit=150", { token: authToken }),
     ]);
     setUsers(Array.isArray(u) ? u : []);
     setTournaments(Array.isArray(t) ? t : []);
     setFriendlies(Array.isArray(f) ? f : []);
     setOverview(o || null);
     setLeaderboard(Array.isArray(l?.leaderboard) ? l.leaderboard : []);
+    setFriends(Array.isArray(fr) ? fr : []);
+    setFriendMatches(Array.isArray(fm) ? fm : []);
   }, [token]);
 
   const loadTournamentPack = useCallback(async (tournamentId, mode = "match") => {
@@ -415,6 +428,12 @@ export default function App() {
     setDrawSelectedParticipantIds(drawPool.map((entry) => entry.id));
   }, [drawPool]);
 
+  useEffect(() => {
+    if (friendMatchFilter === "ALL") return;
+    if (friends.some((entry) => entry.id === friendMatchFilter)) return;
+    setFriendMatchFilter("ALL");
+  }, [friends, friendMatchFilter]);
+
   const selectedCountriesSignature = useMemo(
     () => [...drawSelectedWorldTeams].sort((a, b) => a.localeCompare(b, "es")).join("|"),
     [drawSelectedWorldTeams]
@@ -472,6 +491,15 @@ export default function App() {
     puntos: row.pts,
     goles: row.goalsFor,
   })), [leaderboard]);
+
+  const visibleFriendMatches = useMemo(() => {
+    if (friendMatchFilter === "ALL") return friendMatches;
+    return friendMatches.filter((match) => {
+      const playerAId = match?.playerA?.id || match?.playerAId;
+      const playerBId = match?.playerB?.id || match?.playerBId;
+      return playerAId === friendMatchFilter || playerBId === friendMatchFilter;
+    });
+  }, [friendMatches, friendMatchFilter]);
 
   const playerOptions = useMemo(() => matchType === "TORNEO" ? matchParticipants : users, [matchType, matchParticipants, users]);
 
@@ -606,6 +634,42 @@ export default function App() {
       onError(error, "No pude crear jugador");
     } finally {
       setQuickPlayerBusy(false);
+    }
+  }
+
+  async function addFriend(event) {
+    event.preventDefault();
+    if (friendBusy) return;
+
+    const email = friendForm.email.trim();
+    if (!email) return notify("error", "Ingresa un email");
+
+    setFriendBusy(true);
+    try {
+      await api("/friends", { method: "POST", token, body: { email } });
+      setFriendForm({ email: "" });
+      await loadCore();
+      notify("success", "Amigo agregado");
+    } catch (error) {
+      onError(error, "No pude agregar ese amigo");
+    } finally {
+      setFriendBusy(false);
+    }
+  }
+
+  async function removeFriend(friendId) {
+    if (friendBusy) return;
+    if (!window.confirm("Quitar este amigo?")) return;
+
+    setFriendBusy(true);
+    try {
+      await api(`/friends/${friendId}`, { method: "DELETE", token });
+      await loadCore();
+      notify("success", "Amigo eliminado");
+    } catch (error) {
+      onError(error, "No pude eliminar ese amigo");
+    } finally {
+      setFriendBusy(false);
     }
   }
 
@@ -954,7 +1018,7 @@ export default function App() {
       </header>
 
       <nav className="navTabs">
-        {[ ["DASHBOARD", "Dashboard"], ["PARTIDOS", "Partidos"], ["TORNEOS", "Torneos"], ["SORTEO", "Sorteo"], ["H2H", "Cara a cara"], ["PERFIL", "Perfil"] ].map(([id, label]) => (
+        {[ ["DASHBOARD", "Dashboard"], ["PARTIDOS", "Partidos"], ["TORNEOS", "Torneos"], ["SORTEO", "Sorteo"], ["AMIGOS", "Amigos"], ["H2H", "Cara a cara"], ["PERFIL", "Perfil"] ].map(([id, label]) => (
           <button key={id} type="button" className={tab === id ? "navTab navTabActive" : "navTab"} onClick={() => setTab(id)}>{label}</button>
         ))}
       </nav>
@@ -1397,6 +1461,124 @@ export default function App() {
               )}
             </article>
           </div>
+        </section>
+      )}
+
+      {tab === "AMIGOS" && (
+        <section className="panelStack">
+          <div className="splitCols">
+            <article className="panel">
+              <h2 className="panelTitle">Agregar amigo por correo</h2>
+              <p className="panelSubtitle">
+                Tu amigo debe tener cuenta registrada con ese email.
+              </p>
+
+              <form onSubmit={addFriend} className="formGrid">
+                <label className="field">
+                  Email
+                  <input
+                    type="email"
+                    className="input"
+                    value={friendForm.email}
+                    onChange={(event) =>
+                      setFriendForm((prev) => ({ ...prev, email: event.target.value }))
+                    }
+                    placeholder="amigo@correo.com"
+                  />
+                </label>
+                <button type="submit" className="primaryBtn" disabled={friendBusy}>
+                  {friendBusy ? "Guardando..." : "Agregar amigo"}
+                </button>
+              </form>
+            </article>
+
+            <article className="panel">
+              <h2 className="panelTitle">Mis amigos</h2>
+              {friends.length === 0 ? (
+                <p className="muted">Aun no agregaste amigos.</p>
+              ) : (
+                <ul className="recentList">
+                  {friends.map((entry) => (
+                    <li key={entry.id} className="rowItem">
+                      <div className="rowMain">
+                        <strong>{entry.name}</strong>
+                        <span className="rowMeta">
+                          {entry.email || "Sin email"}
+                          {entry.bio ? ` | ${entry.bio}` : ""}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="dangerBtn"
+                        onClick={() => removeFriend(entry.id)}
+                        disabled={friendBusy}
+                      >
+                        Quitar
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </article>
+          </div>
+
+          <article className="panel">
+            <h2 className="panelTitle">Partidos de mis amigos</h2>
+            <p className="panelSubtitle">
+              Aqui puedes seguir todos los partidos de la gente que agregaste por correo.
+            </p>
+
+            {friends.length === 0 ? (
+              <p className="muted">Agrega amigos para empezar a ver sus partidos.</p>
+            ) : (
+              <>
+                <label className="field">
+                  Filtrar por amigo
+                  <select
+                    className="select"
+                    value={friendMatchFilter}
+                    onChange={(event) => setFriendMatchFilter(event.target.value)}
+                  >
+                    <option value="ALL">Todos mis amigos</option>
+                    {friends.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {visibleFriendMatches.length === 0 ? (
+                  <p className="muted">Todavia no hay partidos cargados para ese amigo.</p>
+                ) : (
+                  <ul className="recentList compact">
+                    {visibleFriendMatches.slice(0, 40).map((match) => (
+                      <li key={match.id} className="rowItem">
+                        <div className="rowMain">
+                          <strong>
+                            {match.playerA.name} {match.scoreA} - {match.scoreB} {match.playerB.name}
+                          </strong>
+                          <span className="rowMeta">
+                            {match.type} | {formatDate(match.playedAt)}
+                            {match.tournament
+                              ? ` | ${match.tournament.name} ${match.tournament.year}`
+                              : ""}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="dangerBtn"
+                          onClick={() => deleteMatch(match.id, match.tournamentId || null)}
+                        >
+                          Eliminar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </article>
         </section>
       )}
 
