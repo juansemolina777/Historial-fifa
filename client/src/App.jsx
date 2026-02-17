@@ -1,6 +1,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Analytics } from "@vercel/analytics/react";
 import "./App.css";
 
 const API = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
@@ -1637,6 +1638,7 @@ export default function App() {
           </form>
         </section>
       )}
+      <Analytics />
     </div>
   );
 }
